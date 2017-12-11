@@ -28,7 +28,7 @@ class FCLayer(Layer):
         return self.params
 
 class PredLayer(Layer):
-    def __init__(self, W, b, act_fnc=F.softmax):
+    def __init__(self, W, b, act_fnc=F.log_softmax):
         self.W = W
         self.b = b
         self.act_fnc = act_fnc

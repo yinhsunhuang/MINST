@@ -19,7 +19,7 @@ grad_t = 0
 filename_save = "relu_dropout_0.5.csv"
 
 def criterion(targ, pred):
-    return (-targ * pred.log()).sum()
+    return (-targ * pred).sum()
 
 def count_correct(targ, pred):
     """
