@@ -9,6 +9,8 @@ class FbankDataset(Dataset):
         self._loaded = False
         self._base_dir = base_dir
         self._is_test = is_test
+        self.window_len = 9
+        
         self.loadMap()
         self.loadData()
         super(FbankDataset, self).__init__()
@@ -19,25 +21,19 @@ class FbankDataset(Dataset):
     def __getitem__(self, idx):
         if not self._is_test:
             sample = {
-                'label': self.frame_names[idx],
-                'x': self.x[idx:idx+9,:].flatten(),
+                'label': self.frame_names[idx:idx+self.window_len],
+                'x': self.x[idx:idx+self.window_len,:].flatten(),
                 'y': self.y[idx]
             }
         else:
             sample = {
                 'label': self.frame_names[idx],
-                'x':self.x[idx:idx+9,:].flatten()
+                'x':self.x[idx:idx+self.window_len,:].flatten()
             }
         return sample
 
-    def phone_to_onehot(self,x):
-        id = self.phone_ctr[x[0]]
-        out = np.zeros(48,np.int8)
-        out[id]=1
-        return out
-
-    def state_to_onehot(self,x):
-        out = np.zeros(1943,np.int8)
+    def to_onehot(self,x):
+        out = np.zeros(self.y_dim,np.int8)
         out[x]=1
         return out
         
@@ -51,13 +47,18 @@ class FbankDataset(Dataset):
         self.frame_names = self.fbank_train.index.tolist()
         self.x = self.fbank_train.values
         self.N = self.x.shape[0]
+        self.x_dim = self.x.shape[1]
 
-        self.x = np.vstack( ( np.zeros((4,self.x.shape[1])), self.x ,np.zeros((4,self.x.shape[1])) ) )
+        self.x = np.vstack( ( np.zeros(((self.window_len-1)//2,self.x.shape[1])), self.x ,np.zeros(((self.window_len-1)//2,self.x.shape[1])) ) )
         
         if not self._is_test:
             self.labels = pd.read_csv(self._base_dir+'state_label/train.lab',index_col=0, sep=',', header=None)
             self.y = self.labels.ix[self.frame_names, :].values
-            self.y = np.asarray([self.state_to_onehot(yi) for yi in self.y],dtype=np.uint8)
+            self.y_dim = 1943
+            self.y = np.asarray(self.y,dtype=np.uint8)
+            #self.y = np.asarray([self.to_onehot(yi) for yi in self.y],dtype=np.uint8)
+            #self.y = np.asarray([self.phone_ctr[yi[0]] for yi in self.y],dtype=np.uint8)
+            self.y = np.squeeze(self.y)
 
 
     def loadMap(self):
@@ -91,7 +92,7 @@ class PartialDataset(Dataset):
     def __len__(self):
         return self.length
     def __getitem__(self, i):
-        return self.parent_ds[self.perm[i+self.offset]]
+        return self.parent_ds[i+self.offset]
 
 def validation_split(dataset, val_share=0.1):
     val_offset = int(len(dataset)*(1-val_share))
@@ -101,22 +102,33 @@ if __name__=='__main__':
     Dtest = FbankDataset(is_test=False)
     print("Testing containing {} test cases".format(len(Dtest)))
     Dtrain = FbankDataset()
-    for i in range(len(Dtrain)):
+    for i in range(3):
         print(Dtrain[i]['x'])
         print(Dtrain[i]['y'])
         print(Dtrain[i]['label'])
     train_ds, valid_ds = validation_split(Dtrain)
     train_loader = DataLoader(train_ds, batch_size=4)
     valid_loader = DataLoader(valid_ds, batch_size=4)
-    print()
     for i_batch, sample_batched in enumerate(train_loader):
-        print(i_batch, sample_batched['label'])
+        print(sample_batched['x'])
+        print(sample_batched['y'])
+        print(sample_batched['label'])
+        break
     print("jasdlkfjalksdjflkasdjlkfj")
     for i_batch, sample_batched in enumerate(train_loader):
-        print(i_batch, sample_batched['label'])
+        print(sample_batched['x'])
+        print(sample_batched['y'])
+        print(sample_batched['label'])
+        break
 
     for i_batch, sample_batched in enumerate(valid_loader):
-        print(i_batch, sample_batched['label'])
+        print(sample_batched['x'])
+        print(sample_batched['y'])
+        print(sample_batched['label'])
+        break
     print("jasdlkfjalksdjflkasdjlkfj")
     for i_batch, sample_batched in enumerate(valid_loader):
-        print(i_batch, sample_batched['label'])
+        print(sample_batched['x'])
+        print(sample_batched['y'])
+        print(sample_batched['label'])
+        break

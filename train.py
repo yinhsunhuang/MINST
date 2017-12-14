@@ -1,25 +1,40 @@
 import torch
+import math
 import numpy as np
 from FbankDataset import FbankDataset, validation_split
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import torch.nn.functional as F
+import torch.nn as nn
 import Layer
 from Network import Network
 
 nBatch = 256
 dtype = torch.FloatTensor
 # Adam parameters
-alpha = 1e-5
-beta1 = 0.5
+# learning rate
+alpha = 0
+alpha_max = 1e-3
+alpha_min = 0
+alpha_Tmul = 1
+alpha_Ti = 20
+alpha_T = 0
+beta1 = 0.9
+beta1_t = beta1
 beta2 = 0.999
+beta2_t = beta2
 epsilon = 1e-8
-grad_t = 0
 # -----------
-filename_save = "relu_dropout_0.5.csv"
+l2_lambda = 1e-5
 
-def criterion(targ, pred):
-    return (-targ * pred).sum()
+# [warm]_[act_fun]_[init]_[dp_dpProb]_[#].csv
+filename_save = "deep_state_dp_0.5_2.csv"
+
+# def criterion(targ, pred):
+#     idx = targ.data
+#     print(-pred[idx])
+#     return (-pred[idx]).sum()
+criterion = nn.CrossEntropyLoss()
 
 def count_correct(targ, pred):
     """
@@ -27,19 +42,9 @@ def count_correct(targ, pred):
             targ, label of training data
             pred, probability prediction
     """
-    target = np.argmax(targ.numpy(), axis=1)
+    target = targ.numpy()
     pred_y = np.argmax(pred.data.cpu().numpy(), axis=1)
     return (pred_y==target).sum()
-
-def validation():
-    """
-        Validation with valid_loader, not used in the new version
-    """
-    for valid_batch in valid_loader:
-        x = Variable(valid_batch['x'].type(dtype)).cuda()
-        prob_y = logistic_reg(x,W1,b1,W2,b2,W3,b3,W4,b4,W5,b5)
-        correct_count = count_correct(valid_batch['y'], prob_y)
-        print("Correct Count: {} ({}%),".format( correct_count, correct_count/prob_y.data.size[0]*100))
 
 def test(ds):
     mapping = ds.ctr_phone
@@ -58,16 +63,25 @@ def grad_update(parameters):
     """
         Update parameters with Adam method
     """
-    global param_m_grad,param_v_grad, beta1, beta1, grad_t
-    grad_t += 1
+    global param_m_grad,param_v_grad, beta1, beta1_t, beta2, beta2_t, grad_t,alpha
     for i, param in enumerate(parameters):
         param_m_grad[i] = beta1 * param_m_grad[i] + (1-beta1) * param.grad.data
         param_v_grad[i] = beta2 * param_v_grad[i] + (1-beta2) * param.grad.data.pow(2)
-        param.data -= alpha * ( param_m_grad[i]/(1 - beta1**grad_t) )/(param_v_grad[i].sqrt() + epsilon)
-        
+        est_m = param_m_grad[i]/(1-beta1_t)
+        est_v = param_v_grad[i]/(1-beta2_t)
+        est_v = est_v.sqrt()
+        param.data -= alpha * est_m/(est_v + epsilon)
+        if beta1_t < 1e-14:
+            beta1_t = 0
+        else:
+            beta1_t *= beta1
+        if beta2_t < 1e-14:
+            beta2_t = 0
+        else:
+            beta2_t *= beta2
+
     for param in parameters:
         param.grad.data.zero_()
-
 
 def train(to_valid=False):
     """
@@ -76,30 +90,41 @@ def train(to_valid=False):
     batch_num = len(train_loader)
     print("Total Batch number {}".format(batch_num))
     correct_ctr, valid_ctr = 0, 0
+    running_loss = Variable(torch.FloatTensor(1).zero_().cuda(),volatile=True)
     for i_batch, train_batch in enumerate(train_loader):
         x = Variable(train_batch['x']).type(dtype).cuda()
-        target = Variable(train_batch['y'].type(dtype)).cuda()
-        
-
+        target = Variable(train_batch['y'].type(torch.LongTensor)).cuda()
         if i_batch > batch_num * 0.9:
             # Validating
             if not to_valid:
-                continue
+                break
             prob_y = model.out(x,is_test=True)
-            loss = criterion(target, prob_y)
+
+            loss = criterion(prob_y,target)
+            for p in model.parameters():
+                loss += l2_lambda * p.norm(2)
+            
+            if(i_batch % 400 == 399):
+                print("batch #{}, loss:{}".format(i_batch, running_loss.data[0]/(i_batch+1)))
             correct_ctr += count_correct(train_batch['y'], prob_y)
             valid_ctr += train_batch['y'].size()[0]
         else:
             # Training
             prob_y = model.out(x,is_test=False)
-            loss = criterion(target,prob_y)
-            if(i_batch % 400 == 0):
-                print("batch #{}, loss:{}".format(i_batch, loss.data.cpu().numpy()[0]))
+            loss = criterion(prob_y,target)
+            for p in model.parameters():
+                loss += l2_lambda * p.norm(2)
+
+            if(i_batch % 400 == 399):
+                print("batch #{}, loss:{}".format(i_batch, running_loss.data[0]/(i_batch+1)))
+                
             loss.backward()
             grad_update(parameters)
+        running_loss += loss
     if to_valid:
         print("Correct Count: {} ({}%),".format( correct_ctr, correct_ctr/valid_ctr*100))
-
+    running_loss /= batch_num
+    print("Avg. loss:{}".format(running_loss.data[0]))
 def post_training():
     #print("Start Validation")
     #validation()
@@ -109,29 +134,30 @@ def post_training():
 
 print("Loading Datasets...")
 Dtrain = FbankDataset()
-train_ds, valid_ds = validation_split(Dtrain,val_share=0.12)
-train_loader = DataLoader(Dtrain, batch_size=nBatch, num_workers=6,pin_memory=True)
-valid_loader = DataLoader(valid_ds, batch_size=len(valid_ds), num_workers=6, pin_memory=True)
+train_ds, valid_ds = validation_split(Dtrain,val_share=0.1)
+train_loader = DataLoader(Dtrain, batch_size=nBatch, num_workers=4,pin_memory=True)
+valid_loader = DataLoader(valid_ds, batch_size=len(valid_ds), num_workers=4, pin_memory=True)
 Dtest = FbankDataset(is_test=True)
 test_loader = DataLoader(Dtest, batch_size=nBatch)
 
 D_in = Dtrain[0]['x'].shape[0]
-D_out = Dtrain[0]['y'].shape[0]
+D_out = Dtrain.y_dim
 
 print("The dataset dimension is ({} -> {})".format(D_in,D_out))
-
+print(filename_save)
 model = Network()
 # initialization of network parameters
 hidden_layer_num = [D_in, 1024,1024,1024,1024, D_out]
 for i in range(len(hidden_layer_num)-1):
     in_dim = hidden_layer_num[i]
     out_dim = hidden_layer_num[i+1]
-    W = Variable( (0.2*(0.5-torch.rand(in_dim, out_dim))).type(dtype).cuda(), requires_grad=True)
-    b = Variable( (0.2*(0.5-torch.rand(1, out_dim))).type(dtype).cuda(), requires_grad=True)
-    if i < len(hidden_layer_num)-2:
+    W = Variable( (0.02*(0.5-torch.rand(in_dim, out_dim))).type(dtype).cuda(), requires_grad=True)
+    #W = Variable( torch.normal(torch.zeros(in_dim, out_dim), 0.1*torch.ones(in_dim, out_dim) ).type(dtype).cuda(), requires_grad=True)
+    #b = Variable( torch.normal(torch.zeros(1, out_dim), 0.1*torch.ones(1, out_dim) ).type(dtype).cuda(), requires_grad=True)
+    b = Variable( (0.02*(0.5-torch.rand(1, out_dim))).type(dtype).cuda(), requires_grad=True)
+    if i < len(hidden_layer_num)-1:
         ll = Layer.FCLayer(W,b,act_fnc=F.relu)
-    else:
-        ll = Layer.PredLayer(W,b)
+    model.append(Layer.DropoutLayer(dropout=0.5)) 
     model.append(ll)
 
 
@@ -150,8 +176,16 @@ print("Start Training...")
 
 try:
     for epoch in range(200):
+        alpha = np.float32(alpha_min + 0.5*(alpha_max-alpha_min)*(1+np.cos(alpha_T/alpha_Ti*math.pi)))
+        #alpha = 1e-3
         print("epoch #{}".format(epoch))
-        train(to_valid=(epoch % 3 == 0))
+        print("learning_rate: {}".format(alpha))
+        train(to_valid=True)
+        if alpha_T == alpha_Ti-1:
+            alpha_Ti *= alpha_Tmul
+            alpha_T = 0
+        else:
+            alpha_T+=1
 
 except KeyboardInterrupt:
     post_training()
