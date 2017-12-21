@@ -9,7 +9,7 @@ class FbankDataset(Dataset):
         self._loaded = False
         self._base_dir = base_dir
         self._is_test = is_test
-        self.window_len = 9
+        self.window_len = 11
         
         self.loadMap()
         self.loadData()
@@ -21,7 +21,7 @@ class FbankDataset(Dataset):
     def __getitem__(self, idx):
         if not self._is_test:
             sample = {
-                'label': self.frame_names[idx:idx+self.window_len],
+                'label': self.frame_names[idx],
                 'x': self.x[idx:idx+self.window_len,:].flatten(),
                 'y': self.y[idx]
             }
@@ -55,7 +55,7 @@ class FbankDataset(Dataset):
             self.labels = pd.read_csv(self._base_dir+'state_label/train.lab',index_col=0, sep=',', header=None)
             self.y = self.labels.ix[self.frame_names, :].values
             self.y_dim = 1943
-            self.y = np.asarray(self.y,dtype=np.uint8)
+            self.y = np.asarray(self.y,dtype=np.int32)
             #self.y = np.asarray([self.to_onehot(yi) for yi in self.y],dtype=np.uint8)
             #self.y = np.asarray([self.phone_ctr[yi[0]] for yi in self.y],dtype=np.uint8)
             self.y = np.squeeze(self.y)
@@ -82,53 +82,20 @@ class FbankDataset(Dataset):
                 self.state_39[int(ll[0])] = ll[2]
 
 class PartialDataset(Dataset):
-    def __init__(self, parent_ds, offset, length):
+    def __init__(self, parent_ds, offset, length, perm):
         self.parent_ds = parent_ds
         self.offset = offset
         self.length = length
-        self.perm = torch.randperm(len(self.parent_ds))
+        self.perm = perm
         assert len(parent_ds)>=offset+length, Exception("Parent Dataset not long enough")
         super(PartialDataset, self).__init__()
     def __len__(self):
         return self.length
     def __getitem__(self, i):
-        return self.parent_ds[i+self.offset]
+        return self.parent_ds[self.perm[i+self.offset]]
 
 def validation_split(dataset, val_share=0.1):
     val_offset = int(len(dataset)*(1-val_share))
-    return PartialDataset(dataset, 0, val_offset), PartialDataset(dataset, val_offset, len(dataset)-val_offset)
+    perm = torch.randperm(len(dataset))
+    return PartialDataset(dataset, 0, val_offset, perm), PartialDataset(dataset, val_offset, len(dataset)-val_offset, perm)
 
-if __name__=='__main__':
-    Dtest = FbankDataset(is_test=False)
-    print("Testing containing {} test cases".format(len(Dtest)))
-    Dtrain = FbankDataset()
-    for i in range(3):
-        print(Dtrain[i]['x'])
-        print(Dtrain[i]['y'])
-        print(Dtrain[i]['label'])
-    train_ds, valid_ds = validation_split(Dtrain)
-    train_loader = DataLoader(train_ds, batch_size=4)
-    valid_loader = DataLoader(valid_ds, batch_size=4)
-    for i_batch, sample_batched in enumerate(train_loader):
-        print(sample_batched['x'])
-        print(sample_batched['y'])
-        print(sample_batched['label'])
-        break
-    print("jasdlkfjalksdjflkasdjlkfj")
-    for i_batch, sample_batched in enumerate(train_loader):
-        print(sample_batched['x'])
-        print(sample_batched['y'])
-        print(sample_batched['label'])
-        break
-
-    for i_batch, sample_batched in enumerate(valid_loader):
-        print(sample_batched['x'])
-        print(sample_batched['y'])
-        print(sample_batched['label'])
-        break
-    print("jasdlkfjalksdjflkasdjlkfj")
-    for i_batch, sample_batched in enumerate(valid_loader):
-        print(sample_batched['x'])
-        print(sample_batched['y'])
-        print(sample_batched['label'])
-        break

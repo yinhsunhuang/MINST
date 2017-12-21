@@ -14,3 +14,6 @@ class Network():
             for p in l.parameters():
                 params.append(p)
         return params
+    def describe(self):
+        for l in self.layers:
+            print(l)
