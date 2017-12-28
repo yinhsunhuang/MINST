@@ -5,12 +5,12 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 class FbankDataset(Dataset):
     """FbankD Dataset"""
-    def __init__(self, base_dir='MLDS_HW1_RELEASE_v1/', is_test=False):
+    def __init__(self, base_dir='MLDS_HW1_RELEASE_v1/', is_test=False, normalize=True):
         self._loaded = False
         self._base_dir = base_dir
         self._is_test = is_test
         self.window_len = 11
-        
+        self.to_normalize=normalize
         self.loadMap()
         self.loadData()
         super(FbankDataset, self).__init__()
@@ -40,17 +40,23 @@ class FbankDataset(Dataset):
     def loadData(self,ratio=0.1):
         '''Helper function for loading training data and labels'''
         if not self._is_test:
-            self.fbank_train = pd.read_csv(self._base_dir + 'fbank/train.ark', index_col=0, sep=' ', header=None)
+            self.fbank_train = pd.read_csv(self._base_dir + 'mfcc/train.ark', index_col=0, sep=' ', header=None)
         else:
-            self.fbank_train = pd.read_csv(self._base_dir + 'fbank/test.ark', index_col=0, sep=' ', header=None)
+            self.fbank_train = pd.read_csv(self._base_dir + 'mfcc/test.ark', index_col=0, sep=' ', header=None)
             
         self.frame_names = self.fbank_train.index.tolist()
         self.x = self.fbank_train.values
         self.N = self.x.shape[0]
         self.x_dim = self.x.shape[1]
 
-        self.x = np.vstack( ( np.zeros(((self.window_len-1)//2,self.x.shape[1])), self.x ,np.zeros(((self.window_len-1)//2,self.x.shape[1])) ) )
         
+        if self.to_normalize:
+            avg = np.mean(self.x,axis=0)
+            std = np.std(self.x,axis=0)
+            self.x = (self.x-avg)/std
+
+        self.x = np.vstack( ( np.zeros(((self.window_len-1)//2,self.x.shape[1])), self.x ,np.zeros(((self.window_len-1)//2,self.x.shape[1])) ) )        
+
         if not self._is_test:
             self.labels = pd.read_csv(self._base_dir+'state_label/train.lab',index_col=0, sep=',', header=None)
             self.y = self.labels.ix[self.frame_names, :].values
