@@ -1,5 +1,6 @@
 import torch
 import math
+import os
 import numpy as np
 from DatasetIO import FbankDataset, validation_split
 from torch.utils.data import Dataset, DataLoader
@@ -9,6 +10,19 @@ import torch.nn as nn
 import torch.optim as optim
 
 from pathlib import Path
+
+import argparse
+
+parser = argparse.ArgumentParser(description='Train MINST dataset')
+
+parser.add_argument('--resume', dest='resume', action='store_true',
+                    help='resume previous model')
+
+parser.add_argument('--name', dest='name', action='store',default='exp1',
+                    help='name of the experiment')
+
+args = parser.parse_args()
+
 
 nBatch = 512
 dtype = torch.FloatTensor
@@ -30,23 +44,23 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.dp1 = nn.Dropout(p=0.1)
-        self.fc1 = nn.Linear(D_in,2048)
-        self.bn1 = nn.BatchNorm1d(2048)
+        self.fc1 = nn.Linear(D_in,1024)
+        self.bn1 = nn.BatchNorm1d(1024)
 
         self.dp2 = nn.Dropout(p=0.1)
-        self.fc2 = nn.Linear(2048,2048)
+        self.fc2 = nn.Linear(1024,2048)
         self.bn2 = nn.BatchNorm1d(2048)
 
         self.dp3 = nn.Dropout(p=0.1)
-        self.fc3 = nn.Linear(2048,2048)
-        self.bn3 = nn.BatchNorm1d(2048)
+        self.fc3 = nn.Linear(2048,1024)
+        self.bn3 = nn.BatchNorm1d(1024)
 
         self.dp4 = nn.Dropout(p=0.1)
-        self.fc4 = nn.Linear(2048,2048)
-        self.bn4 = nn.BatchNorm1d(2048)
+        self.fc4 = nn.Linear(1024,1024)
+        self.bn4 = nn.BatchNorm1d(1024)
 
         self.dp5 = nn.Dropout(p=0.1)
-        self.fc5 = nn.Linear(2048,D_out)
+        self.fc5 = nn.Linear(1024,D_out)
         self.bn5 = nn.BatchNorm1d(D_out)
     def forward(self, x):
         x = F.relu(self.bn1(self.fc1(self.dp1(x))))
@@ -58,13 +72,17 @@ net = Net()
 net.cuda()
 #======================================================
 
-exp_name = "b_bn_relu_dp_0.1"
 
-csv_save = exp_name + ".csv"
-model_save = exp_name + ".pt"
+exp_name = args.name + "/"
+
+if not Path(exp_name).is_dir():
+    os.mkdir(exp_name)
+
+csv_save = exp_name + "result.csv"
+model_save = exp_name + "model.pt"
 
 model_file = Path(model_save)
-if model_file.is_file():
+if model_file.is_file() and args.resume:
     print("Resuming model in file {}".format(model_save))
     net.load_state_dict(torch.load(model_save))
 
