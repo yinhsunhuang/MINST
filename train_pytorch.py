@@ -8,6 +8,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
+from model import Net
 
 from pathlib import Path
 
@@ -31,7 +32,7 @@ print("Loading Datasets...")
 Dtrain = FbankDataset()
 train_ds, valid_ds = validation_split(Dtrain,val_share=0.1)
 train_loader = DataLoader(Dtrain, batch_size=nBatch, num_workers=6,pin_memory=True)
-valid_loader = DataLoader(valid_ds, batch_size=len(valid_ds), num_workers=6, pin_memory=True)
+valid_loader = DataLoader(valid_ds, batch_size=len(valid_ds), num_workers=4, pin_memory=True)
 Dtest = FbankDataset(is_test=True)
 test_loader = DataLoader(Dtest, batch_size=nBatch)
 
@@ -40,35 +41,7 @@ D_out = 1943
 
 # model
 #======================================================
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.dp1 = nn.Dropout(p=0.1)
-        self.fc1 = nn.Linear(D_in,1024)
-        self.bn1 = nn.BatchNorm1d(1024)
-
-        self.dp2 = nn.Dropout(p=0.1)
-        self.fc2 = nn.Linear(1024,2048)
-        self.bn2 = nn.BatchNorm1d(2048)
-
-        self.dp3 = nn.Dropout(p=0.1)
-        self.fc3 = nn.Linear(2048,1024)
-        self.bn3 = nn.BatchNorm1d(1024)
-
-        self.dp4 = nn.Dropout(p=0.1)
-        self.fc4 = nn.Linear(1024,1024)
-        self.bn4 = nn.BatchNorm1d(1024)
-
-        self.dp5 = nn.Dropout(p=0.1)
-        self.fc5 = nn.Linear(1024,D_out)
-        self.bn5 = nn.BatchNorm1d(D_out)
-    def forward(self, x):
-        x = F.relu(self.bn1(self.fc1(self.dp1(x))))
-        x = F.relu(self.bn2(self.fc2(self.dp2(x))))
-        x = F.relu(self.bn3(self.fc3(self.dp3(x))))
-        x = F.relu(self.bn4(self.fc4(self.dp4(x))))
-        return self.bn5(self.fc5(self.dp5(x)))
-net = Net()
+net = Net(D_in, D_out)
 net.cuda()
 #======================================================
 
@@ -86,11 +59,14 @@ if model_file.is_file() and args.resume:
     print("Resuming model in file {}".format(model_save))
     net.load_state_dict(torch.load(model_save))
 
-criterion = nn.CrossEntropyLoss()
+def criterion(prob_y, target_y):
+    fn = nn.CrossEntropyLoss()
+    return fn(prob_y, target_y)
+
 optimizer = optim.Adam(net.parameters(),lr=1e-4,betas=(0.5, 0.999))
 
 
-def count_correct(targ, pred):
+def count_correct(pred, targ):
     """
         Input: 
             targ, label of training data
@@ -98,6 +74,22 @@ def count_correct(targ, pred):
     """
     target = targ.numpy()
     pred_y = np.argmax(pred.data.cpu().numpy(), axis=1)
+    return (pred_y==target).sum()
+
+def mapping(a):
+    return Dtrain.state_39[a]
+
+def phone_count(pred, targ):
+    """
+        Input: 
+            targ, label of training data
+            pred, probability prediction
+    """
+    vfunc = np.vectorize(mapping)
+    target = targ.numpy()
+    target = vfunc(target)
+    pred_y = np.argmax(pred.data.cpu().numpy(), axis=1)
+    pred_y = vfunc(pred_y)
     return (pred_y==target).sum()
 
 def test(model, ds):
@@ -114,13 +106,13 @@ def test(model, ds):
             for i in range(len(pred_y)):
                 f.write(test_batch['label'][i] + ',' + ds.state_39[pred_y[i]]+'\n')
 
-def train(model, to_valid=False):
+def train(model,to_valid=False):
     """
         Main training loop
     """
     batch_num = len(train_loader)
     print("Total Batch number {}".format(batch_num))
-    correct_ctr, valid_ctr = 0, 0
+    correct_ctr, valid_ctr, real_ctr = 0, 0, 0
     running_loss = Variable(torch.FloatTensor(1).zero_().cuda(),volatile=True)
     running_loss_ctr=0
     valid_loss = Variable(torch.FloatTensor(1).zero_().cuda(),volatile=True)
@@ -143,7 +135,8 @@ def train(model, to_valid=False):
             loss = criterion(prob_y, target)
 
             valid_loss += loss
-            correct_ctr += count_correct(train_batch['y'], prob_y)
+            correct_ctr += count_correct(prob_y, train_batch['y'])
+            real_ctr += phone_count(prob_y, train_batch['y'])
             valid_ctr += train_batch['y'].size()[0]
 
         else:
@@ -160,7 +153,7 @@ def train(model, to_valid=False):
                 print("batch #{}, loss:{}".format(i_batch, running_loss.data[0]/running_loss_ctr))
 
     if to_valid:
-        print("Correct Count: {}/{} ({}%),".format( correct_ctr, valid_ctr, correct_ctr/valid_ctr*100))
+        print("Correct Count: {}/{} ({}%), Correct label: {}/{} ({}%)".format( correct_ctr, valid_ctr, correct_ctr/valid_ctr*100, real_ctr, valid_ctr, real_ctr/valid_ctr*100))
 
     print("Avg. loss:{}, Valid loss:{}".format(running_loss.data[0]/running_loss_ctr, valid_loss.data[0]/valid_ctr if valid_ctr!=0 else "Nan"))
 
