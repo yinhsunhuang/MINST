@@ -27,7 +27,7 @@ parser.add_argument('--cuda', dest='cuda', action='store_true',
                     help='using gpu as device')
 
 args = parser.parse_args()
-
+print(args)
 
 dtype = torch.FloatTensor
 
@@ -130,11 +130,11 @@ def train(model,to_valid=False):
 
     if args.cuda:
         running_loss, valid_loss = running_loss.cuda(), valid_loss.cuda()
-
-    for idx, seq in enumerate(train_loader):
+    st = time.time()
+    for idx, seq in enumerate(Dtrain):
         shape = seq['x'].shape
-        x = Variable(seq['x'].view(shape[1],1,shape[2])).type(dtype)
-        target = torch.squeeze(Variable(seq['y']).type(torch.LongTensor))
+        x = Variable(torch.FloatTensor(seq['x']).view(shape[0],1,shape[1]))
+        target = Variable(torch.LongTensor(seq['y']))
         model.hidden = model.init_hidden()
 
         optimizer.zero_grad()
@@ -170,7 +170,7 @@ def train(model,to_valid=False):
             running_loss += loss
             running_loss_ctr += seq['y'].shape[0]
             if(idx % 400 == 399):
-                print("seq #{}, loss:{}".format(idx, running_loss.data[0]/running_loss_ctr))
+                print("({}) seq #{}, loss:{}".format(timeSince(st),idx, running_loss.data[0]/running_loss_ctr))
 
     if to_valid:
         print("Correct Count: {}/{} ({}%), Correct label: {}/{} ({}%)".format( correct_ctr, valid_ctr, correct_ctr/valid_ctr*100, real_ctr, valid_ctr, real_ctr/valid_ctr*100))
