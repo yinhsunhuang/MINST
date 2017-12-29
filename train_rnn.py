@@ -38,12 +38,9 @@ Dtest = SequenceDataset(is_test=True)
 D_in = Dtrain[0]['x'].shape[1]
 D_out = 1943
 
-train_loader = DataLoader(Dtrain, batch_size=1, num_workers=4,pin_memory=args.cuda)
-test_loader = DataLoader(Dtest, batch_size=1)
-
 # model
 #======================================================
-net = Lstm(D_in, 1024, D_out,dropout=0.1)
+net = Lstm(D_in, 32, D_out, num_layers=3,dropout=0.1)
 if args.cuda:
     net.cuda()
 #======================================================
@@ -66,7 +63,7 @@ def criterion(prob_y, target_y):
     fn = nn.CrossEntropyLoss()
     return fn(prob_y, target_y)
 
-optimizer = optim.Adam(net.parameters(),lr=1e-4,betas=(0.5, 0.999))
+optimizer = optim.Adam(net.parameters(),lr=1e-4,betas=(0.9, 0.999))
 
 
 def count_correct(pred, target):
@@ -120,7 +117,7 @@ def train(model,to_valid=False):
     """
         Main training loop
     """
-    batch_num = len(train_loader)
+    batch_num = len(Dtrain)
     print("Total Seq number {}".format(batch_num))
     correct_ctr, valid_ctr, real_ctr = 0, 0, 0
     running_loss = Variable(torch.FloatTensor(1).zero_(),volatile=True)
@@ -133,8 +130,8 @@ def train(model,to_valid=False):
     st = time.time()
     for idx, seq in enumerate(Dtrain):
         shape = seq['x'].shape
-        x = Variable(torch.FloatTensor(seq['x']).view(shape[0],1,shape[1]))
-        target = Variable(torch.LongTensor(seq['y']))
+        x = Variable(torch.FloatTensor(seq['x']).view(shape[0],1,shape[1]), requires_grad=False)
+        target = Variable(torch.squeeze(torch.LongTensor(seq['y'])), requires_grad=False)
         model.hidden = model.init_hidden()
 
         optimizer.zero_grad()
@@ -157,7 +154,7 @@ def train(model,to_valid=False):
             valid_loss += loss
             correct_ctr += count_correct(prob_y, seq['y'])
             real_ctr += phone_count(prob_y, seq['y'])
-            valid_ctr += seq['y'].shape[0]
+            valid_ctr += target.data.shape[0]
 
         else:
             # Training
@@ -168,7 +165,9 @@ def train(model,to_valid=False):
             optimizer.step()
 
             running_loss += loss
-            running_loss_ctr += seq['y'].shape[0]
+            running_loss_ctr += target.data.shape[0]
+
+            
             if(idx % 400 == 399):
                 print("({}) seq #{}, loss:{}".format(timeSince(st),idx, running_loss.data[0]/running_loss_ctr))
 

@@ -165,7 +165,7 @@ class SequenceDataset(Dataset):
                 li = self.sequence_id_to_idx[f_name]
                 li.append(idx)
             else:
-                self.sequence_id.append(f_name)                
+                self.sequence_id.append(f_name)
                 self.sequence_id_to_idx[f_name] = [idx]
         
         avg = 0
@@ -182,7 +182,7 @@ class SequenceDataset(Dataset):
             for idx in self.sequence_id_to_idx[f_name]:
                 instance_id = f_name+'_'+str(idx)
                 feas.append(instance_id)
-            self.x.append((self.features.ix[feas,:].values-avg)/std)
+            self.x.append(((self.features.ix[feas,:].values-avg)/std))
         self.N = len(self.sequence_id)
 
 

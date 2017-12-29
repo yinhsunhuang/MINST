@@ -33,11 +33,11 @@ class Net(nn.Module):
         return self.bn5(self.fc5(self.dp5(x)))
 
 class Lstm(nn.Module):
-    def __init__(self, D_in, hidden_dim, D_out, dropout):
+    def __init__(self, D_in, hidden_dim, D_out, num_layers, dropout):
         super(Lstm, self).__init__()
-        self.lstm = nn.LSTM(D_in, hidden_dim, dropout=dropout)
+        self.lstm = nn.LSTM(D_in, hidden_dim, num_layers=num_layers, dropout=dropout)
         self.hidden_dim = hidden_dim
-
+        self.num_lay = num_layers
         self.hidden2state = nn.Linear(hidden_dim, D_out)
         self.hidden = self.init_hidden()
     
@@ -46,8 +46,8 @@ class Lstm(nn.Module):
         # Refer to the Pytorch documentation to see exactly
         # why they have this dimensionality.
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (Variable(torch.zeros(1, 1, self.hidden_dim)).type(torch.FloatTensor),
-                Variable(torch.zeros(1, 1, self.hidden_dim)).type(torch.FloatTensor))
+        return (Variable(torch.zeros(self.num_lay, 1, self.hidden_dim)).type(torch.FloatTensor),
+                Variable(torch.zeros(self.num_lay, 1, self.hidden_dim)).type(torch.FloatTensor))
 
     def forward(self, x):
         lstm_out, self.hidden = self.lstm(x, self.hidden)
