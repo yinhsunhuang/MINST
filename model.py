@@ -1,5 +1,7 @@
+import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 class Net(nn.Module):
     def __init__(self, D_in, D_out):
@@ -29,3 +31,24 @@ class Net(nn.Module):
         x = F.relu(self.bn3(self.fc3(self.dp3(x))))
         x = F.relu(self.bn4(self.fc4(self.dp4(x))))
         return self.bn5(self.fc5(self.dp5(x)))
+
+class Lstm(nn.Module):
+    def __init__(self, D_in, hidden_dim, D_out, dropout):
+        super(Lstm, self).__init__()
+        self.lstm = nn.LSTM(D_in, hidden_dim, dropout=dropout)
+        self.hidden_dim = hidden_dim
+
+        self.hidden2state = nn.Linear(hidden_dim, D_out)
+        self.hidden = self.init_hidden()
+    
+    def init_hidden(self):
+        # Before we've done anything, we dont have any hidden state.
+        # Refer to the Pytorch documentation to see exactly
+        # why they have this dimensionality.
+        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+        return (Variable(torch.zeros(1, 1, self.hidden_dim)).type(torch.FloatTensor),
+                Variable(torch.zeros(1, 1, self.hidden_dim)).type(torch.FloatTensor))
+
+    def forward(self, x):
+        lstm_out, self.hidden = self.lstm(x, self.hidden)
+        return self.hidden2state(lstm_out)

@@ -189,12 +189,15 @@ class SequenceDataset(Dataset):
 
         if not self._is_test:
             self.labels = pd.read_csv(self._base_dir+'state_label/train.lab',index_col=0, sep=',', header=None)
-            self.y = self.labels.ix[self.frame_names, :].values
             self.y_dim = 1943
-            self.y = np.asarray(self.y,dtype=np.int32)
-            #self.y = np.asarray([self.to_onehot(yi) for yi in self.y],dtype=np.uint8)
-            #self.y = np.asarray([self.phone_ctr[yi[0]] for yi in self.y],dtype=np.uint8)
-            self.y = np.squeeze(self.y)
+            self.y = []
+            for f_name in self.sequence_id:
+                labels = []
+                for idx in self.sequence_id_to_idx[f_name]:
+                    instance_id = f_name+'_'+str(idx)
+                    labels.append(instance_id)
+                self.y.append(np.squeeze(self.labels.ix[labels,:].values))
+            
 
     def loadMap(self):
         # 48-39 map
